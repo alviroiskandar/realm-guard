@@ -1,7 +1,9 @@
-import { Command } from "../../types/type";
+import { Command, ValidateOptions } from "../../types/type";
 import { validateRequest } from "../validation";
 import { extract_kick_query } from "./kick";
-import { timeToSecond } from "../generic";
+import { timeToSecond, getStorageDir } from "../generic";
+import { writeFile, rm, mkdir } from "fs/promises";
+import { existsSync } from "fs";
 
 /*
  * TODO(Viro_SSFS,ammarfaizi2):
@@ -11,12 +13,14 @@ import { timeToSecond } from "../generic";
  *
  */
 
+const storage_dir = getStorageDir();
+
 async function do_ban(ctx: any, user: any, seconds: number = -1,
                       revoke_msg: boolean = false, silent: boolean = false)
 {
         let until_date;
 
-        if (seconds == -1) {
+        if (seconds === -1) {
                 /*
                  * Forever!
                  */
@@ -25,17 +29,36 @@ async function do_ban(ctx: any, user: any, seconds: number = -1,
                 until_date = Math.floor(Date.now() / 1000) + seconds;
         }
 
-        await ctx.telegram.banChatMember(ctx.chat.id, user.id, until_date);
+        if (silent) {
+                // create a directory if it doesn't exist
+                if (!existsSync(`${storage_dir}ban_silent`))
+                        await mkdir(`${storage_dir}ban_silent`);
+                // create a file with 0 bytes in it
+                await writeFile(
+                        `${storage_dir}ban_silent/${ctx.chat.id}.temp`,
+                        "",
+                );
+        }
 
-        const c = (until_date == 0) ? "" : "T";
-        console.log(`[${c}BAN] ${user.first_name} (${user.id})`);
+        await ctx.telegram.banChatMember(ctx.chat.id, user.id, until_date, {
+                revoke_messages: revoke_msg,
+        });
 
-        if (silent)
+        const c = (until_date === 0) ? "" : "T";
+        const s = (silent) ? "S" : "";
+        console.log(`[${c}${s}BAN] ${user.first_name} (${user.id})`);
+
+        if (silent) {
+                const time = setTimeout(async () => {
+                        await rm(`${storage_dir}ban_silent/${ctx.chat.id}.temp`);
+                        clearTimeout(time);
+                }, 4 * 1000);
                 return;
+        }
 
         let r;
         if ("time_tban_arg" in ctx)
-                r = `User ${user.first_name} (${user.id}) is temporarily banned for ${ctx.time_tban_arg}!`
+                r = `User ${user.first_name} (${user.id}) is temporarily banned for ${ctx.time_tban_arg}!`;
         else
                 r = `User ${user.first_name} (${user.id}) has been banned!`;
 
@@ -120,7 +143,7 @@ async function __ban_cmd(ctx: any, revoke_msg: boolean = false,
                 "user_is_admin",
                 "bot_is_admin",
                 "noreply_admin",
-        ];
+        ] satisfies ValidateOptions[];
 
         if (!(await validateRequest(ctx, rules)))
                 return;
@@ -151,7 +174,7 @@ async function unban_cmd(ctx: any)
                 "user_is_admin",
                 "bot_is_admin",
                 "noreply_admin",
-        ];
+        ] satisfies ValidateOptions[];
 
         if (!(await validateRequest(ctx, rules)))
                 return;
@@ -188,7 +211,7 @@ async function tban_cmd(ctx: any)
                 "user_is_admin",
                 "bot_is_admin",
                 "noreply_admin",
-        ];
+        ] satisfies ValidateOptions[];
 
         if (!(await validateRequest(ctx, rules)))
                 return;
